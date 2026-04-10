@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique user ID from Firebase Auth" },
+        "displayName": { "type": "string", "description": "User's display name" },
+        "email": { "type": "string", "format": "email", "description": "User's email address" },
+        "photoURL": { "type": "string", "description": "User's profile picture URL" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the user profile was created" }
+      },
+      "required": ["uid", "displayName", "email"]
+    },
+    "Auction": {
+      "title": "Auction",
+      "description": "An auction item listed by a seller",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Auction ID" },
+        "title": { "type": "string", "description": "Item title" },
+        "description": { "type": "string", "description": "Item description" },
+        "imageUrl": { "type": "string", "description": "Item image URL" },
+        "startingPrice": { "type": "number", "description": "Initial price" },
+        "currentPrice": { "type": "number", "description": "Highest bid price" },
+        "highestBidderId": { "type": "string", "description": "UID of the current highest bidder" },
+        "sellerId": { "type": "string", "description": "UID of the seller" },
+        "sellerName": { "type": "string", "description": "Display name of the seller" },
+        "endTime": { "type": "string", "format": "date-time", "description": "When the auction ends" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the auction was created" },
+        "status": { "type": "string", "enum": ["active", "ended"], "description": "Current status of the auction" }
+      },
+      "required": ["title", "startingPrice", "currentPrice", "sellerId", "endTime", "status"]
+    },
+    "Bid": {
+      "title": "Bid",
+      "description": "A bid placed on an auction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Bid ID" },
+        "auctionId": { "type": "string", "description": "ID of the auction" },
+        "bidderId": { "type": "string", "description": "UID of the bidder" },
+        "bidderName": { "type": "string", "description": "Display name of the bidder" },
+        "amount": { "type": "number", "description": "Bid amount" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the bid was placed" }
+      },
+      "required": ["auctionId", "bidderId", "amount", "createdAt"]
+    },
+    "PlatformWallet": {
+      "title": "Platform Wallet",
+      "description": "Global wallet for platform profits",
+      "type": "object",
+      "properties": {
+        "totalProfit": { "type": "number", "description": "Total profit accumulated" },
+        "availableBalance": { "type": "number", "description": "Balance available for withdrawal" },
+        "withdrawalAccount": { "type": "string", "description": "Registered PIX or Bank Account" },
+        "lastUpdated": { "type": "string", "format": "date-time", "description": "Last update timestamp" }
+      }
+    },
+    "Withdrawal": {
+      "title": "Withdrawal",
+      "description": "A withdrawal request from the platform wallet",
+      "type": "object",
+      "properties": {
+        "amount": { "type": "number", "description": "Amount to withdraw" },
+        "status": { "type": "string", "enum": ["pending", "completed", "failed"], "description": "Withdrawal status" },
+        "accountInfo": { "type": "string", "description": "Account where funds were sent" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When requested" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/auctions/{auctionId}": {
+      "schema": "Auction",
+      "description": "Auction listings"
+    },
+    "/auctions/{auctionId}/bids/{bidId}": {
+      "schema": "Bid",
+      "description": "Bids for a specific auction"
+    },
+    "/platform/wallet": {
+      "schema": "PlatformWallet",
+      "description": "Global platform wallet"
+    },
+    "/withdrawals/{withdrawalId}": {
+      "schema": "Withdrawal",
+      "description": "Withdrawal history"
+    }
+  }
+}

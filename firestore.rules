@@ -1,0 +1,148 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required)
+    //   - displayName: string (required)
+    //   - email: string (required)
+    //   - photoURL: string (optional)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: auctions
+    // Document ID: {auctionId}
+    // Fields:
+    //   - title: string (required)
+    //   - description: string (optional)
+    //   - imageUrl: string (optional)
+    //   - startingPrice: number (required)
+    //   - currentPrice: number (required)
+    //   - highestBidderId: string (optional)
+    //   - sellerId: string (required)
+    //   - sellerName: string (required)
+    //   - endTime: timestamp (required)
+    //   - createdAt: timestamp (required)
+    //   - status: string (required, enum: ['active', 'ended'])
+    //
+    // Collection: auctions/{auctionId}/bids
+    // Document ID: {bidId}
+    // Fields:
+    //   - auctionId: string (required)
+    //   - bidderId: string (required)
+    //   - bidderName: string (required)
+    //   - amount: number (required)
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+    
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*"));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'email', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
+             isValidEmail(data.email) &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidAuction(data) {
+      return data.keys().hasAll(['title', 'startingPrice', 'currentPrice', 'sellerId', 'sellerName', 'endTime', 'createdAt', 'status']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.startingPrice is number && data.startingPrice >= 0 &&
+             data.currentPrice is number && data.currentPrice >= data.startingPrice &&
+             data.sellerId == request.auth.uid &&
+             data.endTime is timestamp &&
+             data.createdAt is timestamp &&
+             data.status in ['active', 'ended'];
+    }
+
+    function isValidBid(data, auctionData) {
+      return data.keys().hasAll(['auctionId', 'bidderId', 'bidderName', 'amount', 'createdAt']) &&
+             data.bidderId == request.auth.uid &&
+             data.amount is number &&
+             data.amount > auctionData.currentPrice &&
+             data.createdAt is timestamp &&
+             auctionData.status == 'active' &&
+             auctionData.endTime > request.time;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+             request.auth.token.email == "bobv1486@gmail.com" && 
+             request.auth.token.email_verified == true;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{uid} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(uid) && isValidUser(request.resource.data);
+      allow update: if isOwner(uid) && isValidUser(request.resource.data) && 
+                      request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    match /auctions/{auctionId} {
+      allow read: if true;
+      allow create: if isAuthenticated() && isValidAuction(request.resource.data);
+      allow update: if isAuthenticated() && (
+        isAdmin() ||
+        (isOwner(resource.data.sellerId) && isValidAuction(request.resource.data)) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentPrice', 'highestBidderId', 'bidCount', 'extensionsUsed']) &&
+         request.resource.data.currentPrice > resource.data.currentPrice &&
+         request.resource.data.highestBidderId == request.auth.uid &&
+         resource.data.status == 'active' &&
+         resource.data.endTime > request.time)
+      );
+      allow delete: if isAdmin() || isOwner(resource.data.sellerId);
+
+      match /bids/{bidId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && isValidBid(request.resource.data, get(/databases/$(database)/documents/auctions/$(auctionId)).data);
+      }
+    }
+
+    match /orders/{orderId} {
+      allow read: if isAuthenticated() && (isAdmin() || request.auth.uid == resource.data.buyerId || request.auth.uid == resource.data.sellerId);
+      allow create: if isAdmin(); // Orders are created by the system/admin logic
+      allow update: if isAdmin();
+    }
+
+    match /platform/wallet {
+      allow read, write: if isAdmin();
+    }
+
+    match /withdrawals/{withdrawalId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
