@@ -21,6 +21,7 @@ export interface Auction {
   endTime: Timestamp;
   createdAt: Timestamp;
   status: 'active' | 'ended';
+  paymentStatus?: 'pending' | 'paid' | 'shipped' | 'completed';
   bidCount: number;
   extensionsUsed: number;
 }

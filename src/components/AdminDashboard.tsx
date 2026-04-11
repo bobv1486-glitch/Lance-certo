@@ -1,19 +1,21 @@
 import { useState, useEffect } from 'react';
 import { useCollection, useDocument } from 'react-firebase-hooks/firestore';
-import { collection, query, orderBy, limit, getDocs, where, addDoc, serverTimestamp, Timestamp, doc, setDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { collection, query, orderBy, limit, addDoc, serverTimestamp, Timestamp, doc, setDoc, updateDoc } from 'firebase/firestore';
+import { db, auth } from '../firebase';
 import { Auction } from '../types';
 import { DollarSign, TrendingUp, Package, AlertCircle, ArrowUpRight, ArrowDownRight, Users, Database, Wallet, Landmark, History as HistoryIcon, Save, CheckCircle2, Clock } from 'lucide-react';
-import { motion } from 'motion/react';
 
 export default function AdminDashboard({ onClose }: { onClose: () => void }) {
   const [isSeeding, setIsSeeding] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'wallet'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'wallet' | 'my-auctions'>('my-auctions');
   const [pixKey, setPixKey] = useState('');
   const [isSavingPix, setIsSavingPix] = useState(false);
 
   const [auctionsValue] = useCollection(query(collection(db, 'auctions'), orderBy('createdAt', 'desc')));
   const auctions = auctionsValue?.docs.map(doc => ({ id: doc.id, ...doc.data() } as Auction)) || [];
+
+  const myAuctions = auctions.filter(a => a.sellerId === auth.currentUser?.uid);
+  const isAdmin = auth.currentUser?.email === "bobv1486@gmail.com";
 
   const [walletValue] = useDocument(doc(db, 'platform', 'wallet'));
   const walletData = walletValue?.data();
@@ -26,6 +28,12 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
       setPixKey(walletData.withdrawalAccount);
     }
   }, [walletData]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      setActiveTab('overview');
+    }
+  }, [isAdmin]);
 
   const savePixKey = async () => {
     setIsSavingPix(true);
@@ -60,7 +68,6 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
 
     try {
       const amount = walletData.availableBalance;
-      // 1. Create withdrawal record
       await addDoc(collection(db, 'withdrawals'), {
         amount,
         status: 'pending',
@@ -68,7 +75,6 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
         createdAt: serverTimestamp()
       });
 
-      // 2. Reset balance
       await updateDoc(doc(db, 'platform', 'wallet'), {
         availableBalance: 0,
         lastUpdated: serverTimestamp()
@@ -93,7 +99,7 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
           currentPrice: 5850,
           sellerId: "system_test",
           sellerName: "Vendedor Premium",
-          endTime: Timestamp.fromDate(new Date(Date.now() + 86400000)), // 24h from now
+          endTime: Timestamp.fromDate(new Date(Date.now() + 86400000)),
           createdAt: serverTimestamp(),
           status: 'active',
           bidCount: 14,
@@ -107,39 +113,11 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
           currentPrice: 7400,
           sellerId: "system_test",
           sellerName: "Tech Store",
-          endTime: Timestamp.fromDate(new Date(Date.now() - 3600000)), // Ended 1h ago
+          endTime: Timestamp.fromDate(new Date(Date.now() - 3600000)),
           createdAt: serverTimestamp(),
           status: 'ended',
           bidCount: 28,
           extensionsUsed: 1
-        },
-        {
-          title: "PlayStation 5 + 2 Controles",
-          description: "Versão com disco, acompanha God of War Ragnarok.",
-          imageUrl: "https://picsum.photos/seed/ps5/800/600",
-          startingPrice: 2800,
-          currentPrice: 3650,
-          sellerId: "system_test",
-          sellerName: "Gamer Shop",
-          endTime: Timestamp.fromDate(new Date(Date.now() + 172800000)), // 48h from now
-          createdAt: serverTimestamp(),
-          status: 'active',
-          bidCount: 9,
-          extensionsUsed: 0
-        },
-        {
-          title: "Câmera Sony Alpha A7 III",
-          description: "Apenas o corpo, 15k cliques. Sensor impecável.",
-          imageUrl: "https://picsum.photos/seed/sony/800/600",
-          startingPrice: 9000,
-          currentPrice: 11200,
-          sellerId: "system_test",
-          sellerName: "Foto Pro",
-          endTime: Timestamp.fromDate(new Date(Date.now() - 7200000)), // Ended 2h ago
-          createdAt: serverTimestamp(),
-          status: 'ended',
-          bidCount: 19,
-          extensionsUsed: 2
         }
       ];
 
@@ -147,8 +125,7 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
         await addDoc(collection(db, 'auctions'), auction);
       }
 
-      // Update wallet balance based on seeded data
-      const seededProfit = (7400 + 11200) * 0.07;
+      const seededProfit = (7400) * 0.07;
       await setDoc(doc(db, 'platform', 'wallet'), {
         totalProfit: (walletData?.totalProfit || 0) + seededProfit,
         availableBalance: (walletData?.availableBalance || 0) + seededProfit,
@@ -164,13 +141,10 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
     }
   };
 
-  // Stats calculation
   const completedAuctions = auctions.filter(a => a.status === 'ended');
   const activeAuctions = auctions.filter(a => a.status === 'active');
-  
   const totalVolume = completedAuctions.reduce((acc, curr) => acc + curr.currentPrice, 0);
-  const totalProfit = totalVolume * 0.07; // 7% commission
-  
+  const totalProfit = totalVolume * 0.07;
   const totalBids = auctions.reduce((acc, curr) => acc + (curr.bidCount || 0), 0);
 
   return (
@@ -178,18 +152,24 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex justify-between items-center mb-8">
           <div>
-            <h1 className="text-3xl font-black text-gray-900">Painel do Administrador</h1>
-            <p className="text-gray-500">Visão geral dos lucros e atividades da plataforma.</p>
+            <h1 className="text-3xl font-black text-gray-900">
+              {isAdmin ? 'Painel do Administrador' : 'Meu Painel de Vendedor'}
+            </h1>
+            <p className="text-gray-500">
+              {isAdmin ? 'Visão geral dos lucros e atividades da plataforma.' : 'Acompanhe seus itens e vendas.'}
+            </p>
           </div>
           <div className="flex items-center gap-4">
-            <button 
-              onClick={seedData}
-              disabled={isSeeding}
-              className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-sm disabled:opacity-50"
-            >
-              <Database className="w-4 h-4" />
-              {isSeeding ? 'Gerando...' : 'Gerar Dados de Teste'}
-            </button>
+            {isAdmin && (
+              <button 
+                onClick={seedData}
+                disabled={isSeeding}
+                className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-sm disabled:opacity-50"
+              >
+                <Database className="w-4 h-4" />
+                {isSeeding ? 'Gerando...' : 'Gerar Dados de Teste'}
+              </button>
+            )}
             <button 
               onClick={onClose}
               className="bg-white border border-gray-200 px-4 py-2 rounded-xl font-bold text-gray-600 hover:bg-gray-50 transition-all shadow-sm"
@@ -199,25 +179,33 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-4 mb-8">
+        <div className="flex gap-4 mb-8 overflow-x-auto pb-2">
+          {isAdmin && (
+            <button 
+              onClick={() => setActiveTab('overview')}
+              className={`px-6 py-2 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === 'overview' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-500 hover:bg-gray-100'}`}
+            >
+              Visão Geral (Admin)
+            </button>
+          )}
           <button 
-            onClick={() => setActiveTab('overview')}
-            className={`px-6 py-2 rounded-xl font-bold transition-all ${activeTab === 'overview' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-500 hover:bg-gray-100'}`}
+            onClick={() => setActiveTab('my-auctions')}
+            className={`px-6 py-2 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === 'my-auctions' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-500 hover:bg-gray-100'}`}
           >
-            Visão Geral
+            Meus Itens à Venda
           </button>
-          <button 
-            onClick={() => setActiveTab('wallet')}
-            className={`px-6 py-2 rounded-xl font-bold transition-all ${activeTab === 'wallet' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-500 hover:bg-gray-100'}`}
-          >
-            Minha Conta (Lucros)
-          </button>
+          {isAdmin && (
+            <button 
+              onClick={() => setActiveTab('wallet')}
+              className={`px-6 py-2 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === 'wallet' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-500 hover:bg-gray-100'}`}
+            >
+              Minha Conta (Lucros)
+            </button>
+          )}
         </div>
 
-        {activeTab === 'overview' ? (
+        {activeTab === 'overview' && isAdmin ? (
           <>
-            {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
               <StatCard 
                 title="Lucro Acumulado (7%)" 
@@ -250,11 +238,9 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Recent Activity Table */}
               <div className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="p-6 border-b border-gray-100 flex justify-between items-center">
                   <h2 className="text-xl font-bold text-gray-900">Leilões Recentes</h2>
-                  <button className="text-sm font-bold text-indigo-600 hover:underline">Ver todos</button>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
@@ -299,7 +285,6 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
 
-              {/* Profit Breakdown */}
               <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
                 <h2 className="text-xl font-bold text-gray-900 mb-6">Distribuição de Lucros</h2>
                 <div className="space-y-6">
@@ -310,19 +295,11 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
                     </div>
                     <span className="font-bold text-gray-900">100%</span>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <div className="w-3 h-3 bg-red-400 rounded-full" />
-                      <span className="text-sm font-medium text-gray-600">Taxas de Cancelamento (3.5%)</span>
-                    </div>
-                    <span className="font-bold text-gray-900">0%</span>
-                  </div>
-                  
                   <div className="mt-8 pt-8 border-t border-gray-100">
                     <div className="bg-indigo-50 p-4 rounded-2xl flex items-center gap-4">
                       <AlertCircle className="w-8 h-8 text-indigo-600" />
                       <p className="text-xs text-indigo-700 leading-relaxed">
-                        <strong>Dica do Admin:</strong> Aumente o volume de leilões regionais para reduzir custos de logística e aumentar a satisfação dos usuários.
+                        <strong>Dica do Admin:</strong> Aumente o volume de leilões regionais para reduzir custos de logística.
                       </p>
                     </div>
                   </div>
@@ -330,9 +307,8 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
               </div>
             </div>
           </>
-        ) : (
+        ) : activeTab === 'wallet' && isAdmin ? (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Wallet Balance & Withdrawal */}
             <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
               <div className="flex items-center gap-4 mb-8">
                 <div className="p-4 bg-indigo-600 rounded-2xl text-white">
@@ -380,19 +356,14 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
                   <Landmark className="w-6 h-6" />
                   Solicitar Saque Agora
                 </button>
-                <p className="text-center text-xs text-gray-400">
-                  * O processamento de saques ocorre em até 24 horas úteis.
-                </p>
               </div>
             </div>
 
-            {/* Withdrawal History */}
             <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-8">
               <div className="flex items-center gap-3 mb-8">
                 <HistoryIcon className="w-6 h-6 text-indigo-600" />
                 <h2 className="text-xl font-bold text-gray-900">Histórico de Saques</h2>
               </div>
-
               <div className="space-y-4">
                 {withdrawals.length > 0 ? withdrawals.map((w: any) => (
                   <div key={w.id} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
@@ -418,6 +389,61 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
               </div>
             </div>
           </div>
+        ) : (
+          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="p-6 border-b border-gray-100">
+              <h2 className="text-xl font-bold text-gray-900">Meus Itens à Venda</h2>
+              <p className="text-sm text-gray-500">Acompanhe o desempenho dos seus leilões.</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-gray-50 text-xs font-bold text-gray-400 uppercase tracking-widest">
+                    <th className="px-6 py-4">Item</th>
+                    <th className="px-6 py-4">Status</th>
+                    <th className="px-6 py-4">Lances</th>
+                    <th className="px-6 py-4">Preço Atual</th>
+                    <th className="px-6 py-4">Sua Parte (93%)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {myAuctions.length > 0 ? myAuctions.map(auction => (
+                    <tr key={auction.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-gray-100 rounded-lg overflow-hidden">
+                            {auction.imageUrl && <img src={auction.imageUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" />}
+                          </div>
+                          <span className="font-bold text-gray-900">{auction.title}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${
+                          auction.status === 'active' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {auction.status === 'active' ? 'Ativo' : 'Encerrado'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm font-bold text-gray-600">{auction.bidCount || 0}</td>
+                      <td className="px-6 py-4 font-bold text-gray-900">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(auction.currentPrice)}
+                      </td>
+                      <td className="px-6 py-4 font-black text-green-600">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(auction.currentPrice * 0.93)}
+                      </td>
+                    </tr>
+                  )) : (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-12 text-center">
+                        <Package className="w-12 h-12 text-gray-100 mx-auto mb-4" />
+                        <p className="text-gray-400 font-medium">Você ainda não tem itens à venda.</p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -437,10 +463,6 @@ function StatCard({ title, value, icon: Icon, trend, color }: any) {
       <div className="flex justify-between items-start mb-4">
         <div className={`p-3 rounded-2xl ${colors[color]}`}>
           <Icon className="w-6 h-6" />
-        </div>
-        <div className={`flex items-center gap-1 text-xs font-bold ${trend.includes('+') ? 'text-green-500' : 'text-gray-400'}`}>
-          {trend.includes('+') ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-          {trend}
         </div>
       </div>
       <h3 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-1">{title}</h3>

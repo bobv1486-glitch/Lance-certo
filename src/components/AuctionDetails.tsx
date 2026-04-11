@@ -3,7 +3,7 @@ import { db, auth } from '../firebase';
 import { collection, addDoc, updateDoc, doc, serverTimestamp, query, orderBy, limit } from 'firebase/firestore';
 import { useCollection } from 'react-firebase-hooks/firestore';
 import { Auction, Bid } from '../types';
-import { X, Gavel, History, TrendingUp, AlertCircle } from 'lucide-react';
+import { X, Gavel, History, TrendingUp, AlertCircle, QrCode, Copy, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -16,6 +16,7 @@ interface AuctionDetailsProps {
 export default function AuctionDetails({ auction, onClose }: AuctionDetailsProps) {
   const [bidAmount, setBidAmount] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isConfirmingPayment, setIsConfirmingPayment] = useState(false);
   const [error, setError] = useState('');
 
   const bidsQuery = query(
@@ -26,8 +27,31 @@ export default function AuctionDetails({ auction, onClose }: AuctionDetailsProps
   const [bidsValue] = useCollection(bidsQuery);
   const bids = bidsValue?.docs.map(doc => ({ id: doc.id, ...doc.data() } as Bid)) || [];
 
-  const isEnded = auction.endTime.toDate() < new Date();
+  const isEnded = auction.endTime.toDate() < new Date() || auction.status === 'ended';
   const isSeller = auth.currentUser?.uid === auction.sellerId;
+  const isWinner = auth.currentUser?.uid === auction.highestBidderId;
+
+  const confirmPayment = async () => {
+    setIsConfirmingPayment(true);
+    setError('');
+    try {
+      const response = await fetch(`/api/auctions/${auction.id}/confirm-payment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: auth.currentUser?.uid }),
+      });
+
+      const result = await response.json();
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+    } catch (err) {
+      console.error("Error confirming payment:", err);
+      setError(err instanceof Error ? err.message : 'Erro ao confirmar pagamento.');
+    } finally {
+      setIsConfirmingPayment(false);
+    }
+  };
 
   const placeBid = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -182,13 +206,56 @@ export default function AuctionDetails({ auction, onClose }: AuctionDetailsProps
             )}
           </div>
 
-          {/* Bid Form */}
+          {/* Bid Form / Payment Flow */}
           <div className="p-6 bg-gray-50 border-t border-gray-100">
             {isEnded ? (
-              <div className="bg-red-50 text-red-700 p-4 rounded-xl flex items-center justify-center gap-2 font-bold">
-                <AlertCircle className="w-5 h-5" />
-                Leilão Encerrado
-              </div>
+              isWinner ? (
+                auction.paymentStatus === 'paid' ? (
+                  <div className="bg-green-50 text-green-700 p-6 rounded-2xl border border-green-100 text-center">
+                    <CheckCircle2 className="w-12 h-12 mx-auto mb-3" />
+                    <h3 className="text-xl font-black mb-1">Pagamento Confirmado!</h3>
+                    <p className="text-sm font-medium">O vendedor foi notificado e em breve enviará seu item.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="bg-indigo-600 text-white p-6 rounded-3xl shadow-xl">
+                      <div className="flex items-center gap-3 mb-4">
+                        <QrCode className="w-8 h-8" />
+                        <h3 className="text-xl font-black">Pagar com PIX</h3>
+                      </div>
+                      <div className="bg-white p-4 rounded-2xl mb-4 flex justify-center">
+                        <img 
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=PIX_SIMULADO_LANCE_CERTO_${auction.id}`} 
+                          alt="QR Code PIX" 
+                          className="w-32 h-32"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-bold text-indigo-200 uppercase tracking-widest">Valor a Pagar</p>
+                        <p className="text-3xl font-black">
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(auction.currentPrice)}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <button
+                      onClick={confirmPayment}
+                      disabled={isConfirmingPayment}
+                      className="w-full bg-green-600 text-white py-4 rounded-2xl font-black text-lg hover:bg-green-700 transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {isConfirmingPayment ? 'Confirmando...' : 'Já realizei o pagamento'}
+                    </button>
+                    <p className="text-[10px] text-gray-400 text-center">
+                      * Esta é uma simulação. Ao clicar, o sistema marcará como pago para fins de teste.
+                    </p>
+                  </div>
+                )
+              ) : (
+                <div className="bg-red-50 text-red-700 p-4 rounded-xl flex items-center justify-center gap-2 font-bold">
+                  <AlertCircle className="w-5 h-5" />
+                  Leilão Encerrado
+                </div>
+              )
             ) : isSeller ? (
               <div className="bg-indigo-50 text-indigo-700 p-4 rounded-xl flex items-center justify-center gap-2 font-bold text-center">
                 Você é o vendedor deste item.

@@ -94,6 +94,16 @@ service cloud.firestore {
              auctionData.endTime > request.time;
     }
 
+    function isValidNotification(data) {
+      return data.keys().hasAll(['userId', 'title', 'message', 'type', 'read', 'createdAt']) &&
+             data.userId is string &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 100 &&
+             data.message is string && data.message.size() > 0 && data.message.size() < 500 &&
+             data.type in ['outbid', 'auction_ended', 'payment_received', 'system'] &&
+             data.read is bool &&
+             data.createdAt is timestamp;
+    }
+
     function isAdmin() {
       return isAuthenticated() && 
              request.auth.token.email == "bobv1486@gmail.com" && 
@@ -116,18 +126,17 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidAuction(request.resource.data);
       allow update: if isAuthenticated() && (
         isAdmin() ||
-        (isOwner(resource.data.sellerId) && isValidAuction(request.resource.data)) ||
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentPrice', 'highestBidderId', 'bidCount', 'extensionsUsed']) &&
-         request.resource.data.currentPrice > resource.data.currentPrice &&
-         request.resource.data.highestBidderId == request.auth.uid &&
-         resource.data.status == 'active' &&
-         resource.data.endTime > request.time)
+        (isOwner(resource.data.sellerId) && 
+         isValidAuction(request.resource.data) && 
+         request.resource.data.currentPrice == resource.data.currentPrice &&
+         request.resource.data.highestBidderId == resource.data.highestBidderId &&
+         request.resource.data.bidCount == resource.data.bidCount)
       );
       allow delete: if isAdmin() || isOwner(resource.data.sellerId);
 
       match /bids/{bidId} {
         allow read: if isAuthenticated();
-        allow create: if isAuthenticated() && isValidBid(request.resource.data, get(/databases/$(database)/documents/auctions/$(auctionId)).data);
+        allow create: if false; // Must use /api/bids
       }
     }
 
@@ -137,12 +146,19 @@ service cloud.firestore {
       allow update: if isAdmin();
     }
 
-    match /platform/wallet {
+    match /platform/{document=**} {
       allow read, write: if isAdmin();
     }
 
     match /withdrawals/{withdrawalId} {
       allow read, write: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow update: if isAuthenticated() && request.auth.uid == resource.data.userId && 
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow create: if isAdmin(); // Notifications are created by the system
     }
   }
 }

@@ -29,7 +29,8 @@
         "sellerName": { "type": "string", "description": "Display name of the seller" },
         "endTime": { "type": "string", "format": "date-time", "description": "When the auction ends" },
         "createdAt": { "type": "string", "format": "date-time", "description": "When the auction was created" },
-        "status": { "type": "string", "enum": ["active", "ended"], "description": "Current status of the auction" }
+        "status": { "type": "string", "enum": ["active", "ended"], "description": "Current status of the auction" },
+        "paymentStatus": { "type": "string", "enum": ["pending", "paid", "shipped", "completed"], "description": "Status of the payment and delivery" }
       },
       "required": ["title", "startingPrice", "currentPrice", "sellerId", "endTime", "status"]
     },
@@ -68,6 +69,21 @@
         "accountInfo": { "type": "string", "description": "Account where funds were sent" },
         "createdAt": { "type": "string", "format": "date-time", "description": "When requested" }
       }
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "In-app notification for users",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the user to notify" },
+        "title": { "type": "string", "description": "Notification title" },
+        "message": { "type": "string", "description": "Notification message" },
+        "type": { "type": "string", "enum": ["outbid", "auction_ended", "payment_received", "system"], "description": "Type of notification" },
+        "link": { "type": "string", "description": "Optional link to redirect the user" },
+        "read": { "type": "boolean", "description": "Whether the notification has been read" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the notification was created" }
+      },
+      "required": ["userId", "title", "message", "type", "read", "createdAt"]
     }
   },
   "firestore": {
@@ -90,6 +106,10 @@
     "/withdrawals/{withdrawalId}": {
       "schema": "Withdrawal",
       "description": "Withdrawal history"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User notifications"
     }
   }
 }

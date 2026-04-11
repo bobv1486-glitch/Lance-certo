@@ -3,7 +3,8 @@ import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '../firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { LogIn, LogOut, Gavel, LayoutDashboard, Download } from 'lucide-react';
+import { LogIn, LogOut, Gavel, LayoutDashboard, Download, Bell } from 'lucide-react';
+import NotificationCenter from './NotificationCenter';
 
 export default function Navbar({ onOpenAdmin }: { onOpenAdmin: () => void }) {
   const [user] = useAuthState(auth);
@@ -97,6 +98,7 @@ export default function Navbar({ onOpenAdmin }: { onOpenAdmin: () => void }) {
             )}
             {user ? (
               <div className="flex items-center gap-4">
+                <NotificationCenter />
                 <div className="hidden sm:flex flex-col items-end">
                   <span className="text-sm font-medium text-gray-900">{user.displayName}</span>
                   <span className="text-xs text-gray-500">{user.email}</span>
